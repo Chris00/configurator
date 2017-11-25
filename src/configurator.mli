@@ -14,6 +14,30 @@ val create
 val ocaml_config_var     : t -> string -> string option
 val ocaml_config_var_exn : t -> string -> string
 
+type run_result = {
+    exit_code : int;
+    stdout    : string;
+    stderr    : string;
+  }
+
+module C : sig
+  val compile : t -> ?c_flags:string list -> ?link_flags:string list ->
+                string -> bool
+  (** [compile t ?c_flags ?link_flags c_code] try to compile and link
+     the C code given in [c_code]. Return whether compilation was
+     successful.
+
+     @param c_flags The C compiler flags.  Default: [[]].
+     @param link_flags The linker flags.  Default: [[]].  *)
+
+  val run : t -> ?c_flags:string list -> ?link_flags:string list ->
+            string -> (run_result, unit) Result.t
+  (** [run ?c_flags ?link_flags c_code] try to compile and link the C
+     code given in [c_code] and then run it.  Return [Ok] with the
+     exit code and output of the program if the compilation went fine
+     and [Error] otherwise.  *)
+end
+
 (** [c_test t ?c_flags ?link_flags c_code] try to compile and link the
    C code given in [c_code]. Return whether compilation was
    successful. *)
@@ -23,6 +47,7 @@ val c_test
   -> ?link_flags:string list (** default: [] *)
   -> string
   -> bool
+  [@@deprecated "[since 2017-12] Use Configurator.C.compile"]
 
 module C_define : sig
   module Type : sig

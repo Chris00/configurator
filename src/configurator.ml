@@ -242,42 +242,52 @@ let need_to_compile_and_link_separately t =
   | "msvc" -> true
   | _      -> false
 
-let compile_c_prog t ?(c_flags=[]) ?(link_flags=[]) code =
-  let dir = t.dest_dir ^/ sprintf "c-test-%d" (gen_id t) in
-  Unix.mkdir dir 0o777;
-  let base = dir ^/ "test" in
-  let c_fname = base ^ ".c" in
-  let obj_fname = base ^ t.ext_obj in
-  let exe_fname = base ^ ".exe" in
-  Out_channel.write_all c_fname ~data:code;
-  logf t "compiling c program:";
-  List.iter (String.split_lines code) ~f:(logf t " | %s");
-  let run_ok args =
-    run_ok t ~dir
-      (String.concat ~sep:" "
-         (t.c_compiler :: List.map args ~f:Fn.quote))
-  in
-  let ok =
-    if need_to_compile_and_link_separately t then
-      run_ok (c_flags @ ["-I"; t.stdlib_dir; "-c"; c_fname]) &&
-      run_ok ("-o" :: exe_fname :: obj_fname :: link_flags)
-    else
-      run_ok
-        (List.concat
-           [ c_flags
-           ; [ "-I"; t.stdlib_dir
-             ; "-o"; exe_fname
-             ; c_fname
-             ]
-           ; link_flags
-           ])
-  in
-  if ok then Ok exe_fname else Error ()
 
-let c_test t ?c_flags ?link_flags code =
-  match compile_c_prog t ?c_flags ?link_flags code with
-  | Ok    _ -> true
-  | Error _ -> false
+module C = struct
+  let compile_prog t ?(c_flags=[]) ?(link_flags=[]) code =
+    let dir = t.dest_dir ^/ sprintf "c-test-%d" (gen_id t) in
+    Unix.mkdir dir 0o777;
+    let base = dir ^/ "test" in
+    let c_fname = base ^ ".c" in
+    let obj_fname = base ^ t.ext_obj in
+    let exe_fname = base ^ ".exe" in
+    Out_channel.write_all c_fname ~data:code;
+    logf t "compiling c program:";
+    List.iter (String.split_lines code) ~f:(logf t " | %s");
+    let run_ok args =
+      run_ok t ~dir
+        (String.concat ~sep:" "
+           (t.c_compiler :: List.map args ~f:Fn.quote))
+    in
+    let ok =
+      if need_to_compile_and_link_separately t then
+        run_ok (c_flags @ ["-I"; t.stdlib_dir; "-c"; c_fname]) &&
+          run_ok ("-o" :: exe_fname :: obj_fname :: link_flags)
+      else
+        run_ok
+          (List.concat
+             [ c_flags
+             ; [ "-I"; t.stdlib_dir
+               ; "-o"; exe_fname
+               ; c_fname
+               ]
+             ; link_flags
+             ])
+    in
+    if ok then Ok exe_fname else Error ()
+
+  let compile t ?c_flags ?link_flags code =
+    match compile_prog t ?c_flags ?link_flags code with
+    | Ok    _ -> true
+    | Error _ -> false
+
+  let run t ?c_flags ?link_flags code =
+    match compile_prog t ?c_flags ?link_flags code with
+    | Ok exe_fname -> Ok(run t ~dir:(Fn.dirname exe_fname) exe_fname)
+    | Error () -> Error ()
+end
+
+let c_test = C.compile
 
 module C_define = struct
   module Type = struct
@@ -319,7 +329,7 @@ module C_define = struct
     pr "  return 0;";
     pr "}";
     let code = Buffer.contents buf in
-    match compile_c_prog t ?c_flags ?link_flags code with
+    match C.compile_prog t ?c_flags ?link_flags code with
     | Error () -> die "failed to compile program"
     | Ok exe ->
       run_capture_exn t ~dir:(Fn.dirname exe) (command_line exe [])
